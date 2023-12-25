@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/miekg/dns"
@@ -16,6 +17,7 @@ func init() {
 
 func main() {
 	flag.Parse()
+	log.Printf("config file: %s", config)
 	cfg, err := loadConf(config)
 	if err != nil {
 		panic(err)
