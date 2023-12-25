@@ -1,0 +1,19 @@
+{
+  "cache": {
+    "ttl": 3600
+  },
+  "servers": [
+    "8.8.8.8:53",
+    "61.139.2.69:53"
+  ],
+  "domains": [
+    {
+      "name": "rtbear.com",
+      "records": [
+        {"type": "A","name": "*-kong","value": "192.168.18.195","ttl": 600}
+        {"type": "A","name": "*-k8s","value": "192.168.18.195","ttl": 600}
+        {"type": "A","name": "*-istio","value": "192.168.18.195","ttl": 600}
+      ]
+    }
+  ]
+}
