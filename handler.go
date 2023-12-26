@@ -71,6 +71,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		"TXT":   dns.TypeTXT,
 		"CNAME": dns.TypeCNAME,
 		"MX":    dns.TypeMX,
+		"HTTPS": dns.TypeHTTPS,
 	}
 	typeMapRev := map[uint16]string{}
 	for k, v := range typeMap {
@@ -135,6 +136,14 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 						Hdr:    dns.RR_Header{Name: question.Name, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: r.TTL},
 						Target: r.Value,
 					}
+					msg.Answer = append(msg.Answer, a)
+				case dns.TypeHTTPS:
+					a := new(dns.HTTPS)
+					a.Hdr = dns.RR_Header{Name: ".", Rrtype: dns.TypeHTTPS, Class: dns.ClassINET}
+					e := new(dns.SVCBAlpn)
+					e.Alpn = strings.Split(r.Value, ",")
+					// []string{"h2", "http/1.1"}
+					a.Value = append(a.Value, e)
 					msg.Answer = append(msg.Answer, a)
 				default:
 					log.Println("invalid type: ")
