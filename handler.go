@@ -23,6 +23,7 @@ func clearCache() {
 	cache.Range(func(key, value any) bool {
 		v := value.(cacheItem)
 		if v.ts < now {
+			log.Println("deleted cache: ", key)
 			cache.Delete(key)
 		}
 		return true
