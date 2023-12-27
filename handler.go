@@ -73,7 +73,7 @@ type dnsHandler struct {
 func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
 	cacheKey := fmt.Sprintf("%s-%d", domain, qtype)
 	if v, ok := cache.Load(cacheKey); ok {
-		log.Println(domain, "from cache")
+		log.Println("from cache", cacheKey)
 		return v.(cacheItem).value.([]dns.RR)
 	}
 
