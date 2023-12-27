@@ -14,15 +14,15 @@ import (
 var cache = sync.Map{}
 
 type cacheItem struct {
-	ts    int64
-	value interface{}
+	expire int64
+	value  interface{}
 }
 
 func clearCache() {
 	now := time.Now().Unix()
 	cache.Range(func(key, value any) bool {
 		v := value.(cacheItem)
-		if v.ts < now {
+		if v.expire < now {
 			log.Println("deleted cache: ", key)
 			cache.Delete(key)
 		}
@@ -92,9 +92,11 @@ func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
 			log.Println("\t", ans)
 		}
 		if len(in.Answer) > 0 {
+			ttl := int64(in.Answer[0].Header().Ttl)
+			log.Println("save cache:", cacheKey, "ttl", ttl)
 			cache.Store(cacheKey, cacheItem{
-				ts:    time.Now().Unix() + int64(in.Answer[0].Header().Ttl),
-				value: in.Answer,
+				expire: time.Now().Unix() + ttl,
+				value:  in.Answer,
 			})
 		}
 		return in.Answer
