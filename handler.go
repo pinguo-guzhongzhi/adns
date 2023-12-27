@@ -71,12 +71,6 @@ type dnsHandler struct {
 }
 
 func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
-	cacheKey := fmt.Sprintf("%s-%d", domain, qtype)
-	if v, ok := cache.Load(cacheKey); ok {
-		log.Println("from cache", cacheKey)
-		return v.(cacheItem).value.([]dns.RR)
-	}
-
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(domain), qtype)
 	m.RecursionDesired = true
@@ -89,15 +83,7 @@ func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
 			continue
 		}
 		for _, ans := range in.Answer {
-			log.Println("\t", ans)
-		}
-		if len(in.Answer) > 0 {
-			ttl := int64(in.Answer[0].Header().Ttl)
-			log.Println("save cache:", cacheKey, "ttl", ttl)
-			cache.Store(cacheKey, cacheItem{
-				expire: time.Now().Unix() + ttl,
-				value:  in.Answer,
-			})
+			log.Println("  ", ans)
 		}
 		return in.Answer
 	}
@@ -149,14 +135,10 @@ func (h *dnsHandler) match(question dns.Question) (*Record, error) {
 }
 
 func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
-	msg := new(dns.Msg)
-	msg.SetReply(r)
-	msg.Authoritative = true
-
-	handleLocal := func(question dns.Question) bool {
+	handleLocal := func(question dns.Question) ([]dns.RR, bool) {
 		r, err := h.match(question)
 		if err != nil {
-			return false
+			return nil, false
 		}
 		switch typeMap[r.Type] {
 		case dns.TypeA:
@@ -164,26 +146,26 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 				Hdr: dns.RR_Header{Name: question.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: r.TTL},
 				A:   net.ParseIP(r.Value),
 			}
-			msg.Answer = append(msg.Answer, a)
+			return []dns.RR{a}, true
 		case dns.TypeAAAA:
 			a := &dns.AAAA{
 				Hdr:  dns.RR_Header{Name: question.Name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: r.TTL},
 				AAAA: net.ParseIP(r.Value),
 			}
-			msg.Answer = append(msg.Answer, a)
+			return []dns.RR{a}, true
 		case dns.TypeMX:
 			a := &dns.MX{
 				Hdr:        dns.RR_Header{Name: question.Name, Rrtype: dns.TypeMX, Class: dns.ClassINET, Ttl: r.TTL},
 				Preference: r.Preference,
 				Mx:         r.Value,
 			}
-			msg.Answer = append(msg.Answer, a)
+			return []dns.RR{a}, true
 		case dns.TypeCNAME:
 			a := &dns.CNAME{
 				Hdr:    dns.RR_Header{Name: question.Name, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: r.TTL},
 				Target: strings.TrimSuffix(r.Value, ".") + ".",
 			}
-			msg.Answer = append(msg.Answer, a)
+			return []dns.RR{a}, true
 		case dns.TypeHTTPS:
 			a := new(dns.HTTPS)
 			a.Hdr = dns.RR_Header{Name: ".", Rrtype: dns.TypeHTTPS, Class: dns.ClassINET}
@@ -191,22 +173,41 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 			e.Alpn = strings.Split(r.Value, ",")
 			// []string{"h2", "http/1.1"}
 			a.Value = append(a.Value, e)
-			msg.Answer = append(msg.Answer, a)
+			return []dns.RR{a}, true
 		default:
 			log.Println("invalid type: " + question.String())
 		}
 
-		return false
+		return nil, false
 	}
 
+	msg := new(dns.Msg)
+	msg.SetReply(r)
+	msg.Authoritative = true
 	for _, question := range r.Question {
 		log.Println(question.String())
 		log.Printf("Received query: %s, remote=%s\n", question.String(), w.RemoteAddr().String())
-		if handleLocal(question) {
-			continue
+
+		cacheKey := fmt.Sprintf("%s-%d", question.Name, question.Qtype)
+		if v, ok := cache.Load(cacheKey); ok {
+			log.Println("from cache", cacheKey)
+			msg.Answer = append(msg.Answer, v.(cacheItem).value.([]dns.RR)...)
+		} else {
+			var answers []dns.RR
+			var ok bool
+			if answers, ok = handleLocal(question); !ok {
+				answers = h.resolve(question.Name, question.Qtype)
+			}
+			if len(answers) > 0 {
+				ttl := int64(answers[0].Header().Ttl)
+				log.Println("save cache:", cacheKey, "ttl", ttl)
+				cache.Store(cacheKey, cacheItem{
+					expire: time.Now().Unix() + ttl,
+					value:  answers,
+				})
+			}
+			msg.Answer = append(msg.Answer, answers...)
 		}
-		answers := h.resolve(question.Name, question.Qtype)
-		msg.Answer = append(msg.Answer, answers...)
 	}
 	err := w.WriteMsg(msg)
 	if err != nil {
