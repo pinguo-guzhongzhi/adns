@@ -12,6 +12,23 @@ import (
 )
 
 var cache = sync.Map{}
+
+type cacheItem struct {
+	ts    int64
+	value interface{}
+}
+
+func clearCache() {
+	now := time.Now().Unix()
+	cache.Range(func(key, value any) bool {
+		v := value.(cacheItem)
+		if v.ts < now {
+			cache.Delete(key)
+		}
+		return true
+	})
+}
+
 var typeMap = map[string]uint16{
 	"A":     dns.TypeA,
 	"AAAA":  dns.TypeAAAA,
@@ -26,6 +43,12 @@ func init() {
 	for k, v := range typeMap {
 		typeMapRev[v] = k
 	}
+	go func() {
+		for {
+			clearCache()
+			time.Sleep(time.Second * 10)
+		}
+	}()
 }
 
 func NewHandler(cfg *Config) (*dnsHandler, error) {
@@ -50,7 +73,7 @@ func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
 	cacheKey := fmt.Sprintf("%s-%d", domain, qtype)
 	if v, ok := cache.Load(cacheKey); ok {
 		log.Println(domain, "from cache")
-		return v.([]dns.RR)
+		return v.(cacheItem).value.([]dns.RR)
 	}
 
 	m := new(dns.Msg)
@@ -68,7 +91,10 @@ func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
 			log.Println("\t", ans)
 		}
 		if len(in.Answer) > 0 {
-			cache.Store(cacheKey, in.Answer)
+			cache.Store(cacheKey, cacheItem{
+				ts:    time.Now().Unix() + int64(in.Answer[0].Header().Ttl),
+				value: in.Answer,
+			})
 		}
 		return in.Answer
 	}
