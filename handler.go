@@ -97,14 +97,16 @@ func (h *dnsHandler) match(question dns.Question) (*Record, error) {
 			continue
 		}
 		if _, ok := typeMapRev[question.Qtype]; !ok {
-			log.Printf("un support type: %d", question.Qtype)
+			log.Printf("unsupport type: %d", question.Qtype)
 			continue
 		}
 		for _, r := range domain.Records {
 			qName := fmt.Sprintf("%s.%s.", r.Name, domain.Name)
 			if qName != question.Name {
 				if !strings.Contains(r.Name, "*") {
-					continue
+					if qName != question.Name {
+						continue
+					}
 				} else {
 					tmp := strings.Split(r.Name, "*")
 					rName := ""
