@@ -32,14 +32,14 @@ func main() {
 	go func() {
 		defer wg.Done()
 		udpServer := &dns.Server{
-			Addr:      ":53",
+			Addr:      cfg.Listen,
 			Net:       "udp",
 			Handler:   handler,
 			UDPSize:   65535,
 			ReusePort: true,
 		}
 
-		fmt.Println("Starting DNS server on udp port 53")
+		fmt.Println("Starting DNS server on udp port", cfg.Listen)
 		err = udpServer.ListenAndServe()
 		if err != nil {
 			fmt.Printf("Failed to start server: %s\n", err.Error())
@@ -48,13 +48,13 @@ func main() {
 	go func() {
 		defer wg.Done()
 		udpServer := &dns.Server{
-			Addr:      ":53",
+			Addr:      cfg.Listen,
 			Net:       "tcp",
 			Handler:   handler,
 			UDPSize:   65535,
 			ReusePort: true,
 		}
-		fmt.Println("Starting DNS server on tcp port 53")
+		fmt.Println("Starting DNS server on tcp port", cfg.Listen)
 		err = udpServer.ListenAndServe()
 		if err != nil {
 			fmt.Printf("Failed to start server: %s\n", err.Error())

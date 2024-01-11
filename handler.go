@@ -61,13 +61,69 @@ func NewHandler(cfg *Config) (*dnsHandler, error) {
 			c.UDPSize = 65535
 			return c
 		}},
+		upstream: sync.Map{},
 	}
+	go v.watch()
 	return v, nil
 }
 
+type upstream struct {
+	server   string
+	heatbeat int64
+	failed   int // 失败次数
+}
+
+func (s *upstream) IsDead() bool {
+	return s.failed > 20
+}
+
 type dnsHandler struct {
-	cfg  *Config
-	pool sync.Pool
+	cfg      *Config
+	pool     sync.Pool
+	upstream sync.Map
+}
+
+func (h *dnsHandler) watch() {
+	upstreams := make([]*upstream, 0, len(h.cfg.Servers))
+	for _, server := range h.cfg.Servers {
+		upstreams = append(upstreams, &upstream{
+			server: server,
+		})
+	}
+	c := h.pool.Get().(*dns.Client)
+	loop := func() {
+		for _, up := range upstreams {
+			if up.IsDead() {
+				log.Println("upstream check", up.server, "is dead")
+				continue
+			}
+			in, _, err := c.Exchange(&dns.Msg{
+				Question: []dns.Question{
+					{
+						Name:   "www.baidu.com.",
+						Qtype:  dns.TypeA,
+						Qclass: dns.ClassINET,
+					},
+				},
+			}, up.server)
+			log.Println("upstream check", up.server, up.failed, err)
+			up.heatbeat = time.Now().Unix()
+			_, ok := h.upstream.Load(up.server)
+			if in != nil && len(in.Answer) > 0 {
+				up.failed = 0
+				h.upstream.Store(up.server, up)
+			} else {
+				up.failed += 1
+				if ok && up.failed >= 5 {
+					h.upstream.Delete(up.server)
+				}
+			}
+		}
+	}
+	for {
+		loop()
+		time.Sleep(10 * time.Second)
+	}
 }
 
 func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
@@ -76,18 +132,23 @@ func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
 	m.RecursionDesired = true
 
 	c := h.pool.Get().(*dns.Client)
-	for _, server := range h.cfg.Servers {
-		in, _, err := c.Exchange(m, server)
-		if err != nil {
-			log.Println(domain, qtype, err)
-			continue
+	in := []dns.RR{}
+	h.upstream.Range(func(key, value any) bool {
+		up := value.(*upstream)
+		{
+			rs, _, err := c.Exchange(m, up.server)
+			if err != nil {
+				log.Println(domain, qtype, err)
+				return true
+			}
+			for _, ans := range rs.Answer {
+				log.Println("  ", ans)
+			}
+			in = rs.Answer
+			return false
 		}
-		for _, ans := range in.Answer {
-			log.Println("  ", ans)
-		}
-		return in.Answer
-	}
-	return []dns.RR{}
+	})
+	return in
 }
 
 func (h *dnsHandler) match(question dns.Question) (*Record, error) {

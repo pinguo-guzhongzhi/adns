@@ -38,6 +38,7 @@ type Domain struct {
 }
 
 type Config struct {
+	Listen  string   `json:"listen"`
 	Servers []string `json:"servers"` // 转发请求
 	Domains []Domain `json:"domains"`
 	Cache   struct {
