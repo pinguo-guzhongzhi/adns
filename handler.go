@@ -254,26 +254,28 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		cacheKey := fmt.Sprintf("%s-%d", question.Name, question.Qtype)
 
 		v, ok := cache.Load(cacheKey)
-		cacheValue := v.(cacheItem).value.([]dns.RR)
-		if ok && len(cacheValue) > 0 {
+
+		if ok {
+			cacheValue := v.(cacheItem).value.([]dns.RR)
 			log.Println("from cache", cacheKey)
 			msg.Answer = append(msg.Answer, cacheValue...)
-		} else {
-			var answers []dns.RR
-			var ok bool
-			if answers, ok = handleLocal(question); !ok {
-				answers = h.resolve(question.Name, question.Qtype)
+			if len(cacheValue) > 0 {
+				continue
 			}
-			if len(answers) > 0 {
-				ttl := int64(answers[0].Header().Ttl)
-				log.Println("save cache:", cacheKey, "ttl", ttl)
-				cache.Store(cacheKey, cacheItem{
-					expire: time.Now().Unix() + ttl,
-					value:  answers,
-				})
-			}
-			msg.Answer = append(msg.Answer, answers...)
 		}
+		var answers []dns.RR
+		if answers, ok = handleLocal(question); !ok {
+			answers = h.resolve(question.Name, question.Qtype)
+		}
+		if len(answers) > 0 {
+			ttl := int64(answers[0].Header().Ttl)
+			log.Println("save cache:", cacheKey, "ttl", ttl)
+			cache.Store(cacheKey, cacheItem{
+				expire: time.Now().Unix() + ttl,
+				value:  answers,
+			})
+		}
+		msg.Answer = append(msg.Answer, answers...)
 	}
 	err := w.WriteMsg(msg)
 	if err != nil {
