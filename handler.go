@@ -252,9 +252,12 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		log.Printf("Received query: %s, remote=%s\n", question.String(), w.RemoteAddr().String())
 
 		cacheKey := fmt.Sprintf("%s-%d", question.Name, question.Qtype)
-		if v, ok := cache.Load(cacheKey); ok {
+
+		v, ok := cache.Load(cacheKey)
+		cacheValue := v.(cacheItem).value.([]dns.RR)
+		if ok && len(cacheValue) > 0 {
 			log.Println("from cache", cacheKey)
-			msg.Answer = append(msg.Answer, v.(cacheItem).value.([]dns.RR)...)
+			msg.Answer = append(msg.Answer, cacheValue...)
 		} else {
 			var answers []dns.RR
 			var ok bool
