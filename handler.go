@@ -152,7 +152,6 @@ func (h *dnsHandler) resolve(domain string, qtype uint16) []dns.RR {
 }
 
 func (h *dnsHandler) match(question dns.Question) (*Record, error) {
-
 	for _, domain := range h.cfg.Domains {
 		if !strings.Contains(question.Name, domain.Name) {
 			continue
@@ -162,7 +161,11 @@ func (h *dnsHandler) match(question dns.Question) (*Record, error) {
 			continue
 		}
 		for _, r := range domain.Records {
-			qName := fmt.Sprintf("%s.%s.", r.Name, domain.Name)
+			name := r.Name
+			if name != "" {
+				name = name + "."
+			}
+			qName := fmt.Sprintf("%s%s.", name, domain.Name)
 			if qName != question.Name {
 				if !strings.Contains(r.Name, "*") {
 					if qName != question.Name {
